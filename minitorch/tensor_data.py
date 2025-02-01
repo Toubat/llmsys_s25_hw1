@@ -166,6 +166,7 @@ class TensorData:
         assert isinstance(shape, tuple), "Shape must be tuple"
         if len(strides) != len(shape):
             raise IndexingError(f"Len of strides {strides} must match {shape}.")
+
         self._strides = array(strides)
         self._shape = array(shape)
         self.strides = strides
@@ -175,8 +176,8 @@ class TensorData:
         assert len(self._storage) == self.size
 
     def to_cuda_(self) -> None:  # pragma: no cover
-        if not numba.cuda.is_cuda_array(self._storage):
-            self._storage = numba.cuda.to_device(self._storage)
+        if not numba.cuda.is_cuda_array(self._storage):  # type: ignore
+            self._storage = numba.cuda.to_device(self._storage)  # type: ignore
 
     def is_contiguous(self) -> bool:
         """
@@ -263,9 +264,10 @@ class TensorData:
         s = ""
         for index in self.indices():
             l = ""
+            tab = "    "
             for i in range(len(index) - 1, -1, -1):
                 if index[i] == 0:
-                    l = "\n%s[" % ("\t" * i) + l
+                    l = "\n%s[" % (tab * i) + l
                 else:
                     break
             s += l
@@ -274,11 +276,21 @@ class TensorData:
             l = ""
             for i in range(len(index) - 1, -1, -1):
                 if index[i] == self.shape[i] - 1:
+                    is_last = i == len(index) - 1
+                    is_first = i == 0
+
+                    if not is_last:
+                        l += "\n" + (tab * i)
+
                     l += "]"
+
+                    if not is_first:
+                        l += ","
                 else:
                     break
             if l:
                 s += l
             else:
                 s += " "
+        
         return s
