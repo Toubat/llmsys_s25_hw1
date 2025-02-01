@@ -166,7 +166,7 @@ def test_back_view(t1: Tensor) -> None:
     def view(a: Tensor) -> Tensor:
         a = a.contiguous()
         if isinstance(a, torch.Tensor):
-            return a.view(a.size)
+            return a.view(a.size())  # type: ignore
         return a.view(a.size)
 
     grad_check(view, t1)

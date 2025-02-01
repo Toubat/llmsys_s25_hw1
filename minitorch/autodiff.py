@@ -1,7 +1,7 @@
 import numpy.typing as npt
 
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Tuple, Set
+from typing import Any, Iterable, List, Tuple, Set, Dict
 
 from typing_extensions import Protocol
 from minitorch.tensor_data import datatype
@@ -138,7 +138,33 @@ def backpropagate(variable: Variable, deriv: Any) -> None:
     No return. Should write to its results to the derivative values of each leaf through `accumulate_derivative`.
     """
     
-    variables = topological_sort(variable)
+    outgrads: Dict[int, Any] = { variable.unique_id: deriv }
+
+    for var in topological_sort(variable):
+        outgrad = outgrads.pop(var.unique_id)
+
+        if var.is_leaf():
+            continue
+        
+        input_grads = var.chain_rule(outgrad)
+        for inp_var, inp_grad in input_grads:
+            # directly accumulate grad to leaf without extra memory space
+            if inp_var.is_leaf():
+                inp_var.accumulate_derivative(inp_grad)
+                outgrads[inp_var.unique_id] = None
+                continue
+            
+            if inp_var.is_constant():
+                continue
+
+            # accumulate grad to non-leaf node
+            if inp_var.unique_id not in outgrads:
+                outgrads[inp_var.unique_id] = inp_grad
+            else:
+                outgrads[inp_var.unique_id] += inp_grad
+    
+    assert len(outgrads) == 0, "Some variables are not processed"
+    return None
 
 
 @dataclass
