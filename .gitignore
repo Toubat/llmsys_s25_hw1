@@ -1,3 +1,5 @@
 cuda_kernels/
 
 __pycache__/
+
+.hypothesis/

@@ -1,8 +1,10 @@
+import numpy.typing as npt
+
 from dataclasses import dataclass
 from typing import Any, Iterable, List, Tuple
 
 from typing_extensions import Protocol
-
+from minitorch.tensor_data import datatype
 
 def central_difference(f: Any, *vals: Any, arg: int = 0, epsilon: float = 1e-6) -> Any:
     r"""
@@ -31,6 +33,13 @@ variable_count = 1
 
 
 class Variable(Protocol):
+    def to_numpy(self) -> npt.NDArray[datatype]:
+        """
+        Returns:
+            npt.NDArray[datatype]: The value of this Variable as a NumPy array.
+        """
+        ...
+
     def accumulate_derivative(self, x: Any) -> None:
         """
         Accumulates the derivative (gradient) for this Variable.
@@ -38,7 +47,7 @@ class Variable(Protocol):
         Args:
             x (Any): The gradient value to be accumulated.
         """
-        pass
+        ...
 
     @property
     def unique_id(self) -> int:
@@ -46,7 +55,7 @@ class Variable(Protocol):
         Returns:
             int: The unique identifier of this Variable.
         """
-        pass
+        ...
 
     def is_leaf(self) -> bool:
         """
@@ -55,7 +64,7 @@ class Variable(Protocol):
         Returns:
             bool: True if this Variable is a leaf node, False otherwise.
         """
-        pass
+        ...
 
     def is_constant(self) -> bool:
         """
@@ -64,7 +73,7 @@ class Variable(Protocol):
         Returns:
             bool: True if this Variable is constant, False otherwise.
         """
-        pass
+        ...
 
     @property
     def parents(self) -> Iterable["Variable"]:
@@ -74,7 +83,7 @@ class Variable(Protocol):
         Returns:
             Iterable[Variable]: The parent Variables of this Variable.
         """
-        pass
+        ...
 
     def chain_rule(self, d_output: Any) -> Iterable[Tuple["Variable", Any]]:
         """
@@ -87,7 +96,7 @@ class Variable(Protocol):
             Iterable[Tuple[Variable, Any]]: An iterable of tuples, where each tuple
                 contains a parent Variable and the corresponding gradient contribution.
         """
-        pass
+        ...
 
 
 def topological_sort(variable: Variable) -> Iterable[Variable]:
