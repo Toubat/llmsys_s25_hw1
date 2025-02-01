@@ -1,7 +1,7 @@
 import numpy.typing as npt
 
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Tuple
+from typing import Any, Iterable, List, Tuple, Set
 
 from typing_extensions import Protocol
 from minitorch.tensor_data import datatype
@@ -109,11 +109,21 @@ def topological_sort(variable: Variable) -> Iterable[Variable]:
     Returns:
         Non-constant Variables in topological order starting from the right.
     """
-    # BEGIN ASSIGN1_1
-    # TODO
-    
-    raise NotImplementedError("Task Autodiff Not Implemented Yet")
-    # END ASSIGN1_1
+    variables: List[Variable] = []
+    visited: Set[int] = set()
+
+    def dfs(variable: Variable):
+        if variable.unique_id in visited or variable.is_constant():
+            return
+
+        visited.add(variable.unique_id)
+        for child in variable.parents:
+            dfs(child)
+        
+        variables.append(variable)
+
+    dfs(variable)
+    return reversed(variables)
 
 
 def backpropagate(variable: Variable, deriv: Any) -> None:
