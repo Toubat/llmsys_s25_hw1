@@ -364,7 +364,7 @@ def zeros(shape: UserShape, backend: TensorBackend = SimpleBackend) -> Tensor:
         new tensor
     """
     return minitorch.Tensor.make(
-        [0] * int(operators.prod(shape)), shape, backend=backend
+        [0.] * int(operators.prod(shape)), shape, backend=backend
     )
 
 
@@ -380,7 +380,7 @@ def ones(shape: UserShape, backend: TensorBackend = SimpleBackend) -> Tensor:
         new tensor
     """
     return minitorch.Tensor.make(
-        [1] * int(operators.prod(shape)), shape, backend=backend
+        [1.] * int(operators.prod(shape)), shape, backend=backend
     )
 
 
@@ -539,10 +539,10 @@ def grad_central_difference(
 
 
 def grad_check(f: Any, *vals: Tensor, tol=1e-6) -> None:
-    
     for x in vals:
         x.requires_grad_(True)
         x.zero_grad_()
+
     random.seed(10)
     out = f(*vals)
     out.sum().backward()

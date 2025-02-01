@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Optional, Type
-
+from abc import ABC
 import numpy as np
 from typing_extensions import Protocol
 
@@ -24,28 +24,28 @@ class MapProto(Protocol):
         ...
 
 
-class TensorOps:
+class TensorOps(ABC):
     @staticmethod
     def map(fn: Callable[[float], float]) -> MapProto:
-        pass
+        raise NotImplementedError
 
     @staticmethod
     def cmap(fn: Callable[[float], float]) -> Callable[[Tensor, Tensor], Tensor]:
-        pass
+        raise NotImplementedError
 
     @staticmethod
     def zip(fn: Callable[[float, float], float]) -> Callable[[Tensor, Tensor], Tensor]:
-        pass
+        raise NotImplementedError
 
     @staticmethod
     def reduce(
         fn: Callable[[float, float], float], start: float = 0.0
     ) -> Callable[[Tensor, int], Tensor]:
-        pass
+        raise NotImplementedError
 
     @staticmethod
     def matrix_multiply(a: Tensor, b: Tensor) -> Tensor:
-        raise NotImplementedError("Not implemented in this assignment")
+        raise NotImplementedError
 
     cuda = False
 

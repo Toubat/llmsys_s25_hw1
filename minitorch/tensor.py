@@ -257,7 +257,7 @@ class Tensor:
         else:
             shape = self.shape
             mean = self.sum() / self.size
-            mean = mean.contiguous().view(shape)
+            mean = mean.contiguous().view(*shape)
             
             diff = self.__sub__(mean) ** 2
             diff = diff.sum() / self.size
@@ -376,7 +376,7 @@ class Tensor:
         assert self.is_leaf(), "Only leaf variables can have derivatives."
         if self.grad is None:
             self.grad = Tensor.make(
-                [0] * int(operators.prod(self.shape)), self.shape, backend=self.backend
+                [0.] * int(operators.prod(self.shape)), self.shape, backend=self.backend
             )
         self.grad += x
 
