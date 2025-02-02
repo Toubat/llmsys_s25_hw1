@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict, Union
 
 from . import operators
 from .tensor import Tensor
@@ -22,8 +22,11 @@ except:
 
 datatype = np.float32
 
+UnaryOp = Callable[[float], float]
+BinaryOp = Callable[[float, float], float]
+
 # function map
-fn_map = {
+fn_map: Dict[Union[UnaryOp, BinaryOp], int] = {
   operators.add: 1,
   operators.mul: 2,
   operators.id: 3,
@@ -72,6 +75,8 @@ class CudaKernelOps(TensorOps):
 
             # Define the return type for the tensorMap function
             lib.tensorMap.restype = None
+
+            assert out.shape == a.shape, "Output shape must match input shape: {} != {}".format(out.shape, a.shape)
 
             # Call the function
             lib.tensorMap(
@@ -176,8 +181,6 @@ class CudaKernelOps(TensorOps):
     def matrix_multiply(a: Tensor, b: Tensor) -> Tensor:
         both_2d = 0
         if len(a.shape) == 2:
-            print(a)
-            print(a.contiguous())
             a = a.contiguous().view(1, a.shape[0], a.shape[1])
             both_2d += 1
         if len(b.shape) == 2:

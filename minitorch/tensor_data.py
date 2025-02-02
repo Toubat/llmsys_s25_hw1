@@ -261,36 +261,9 @@ class TensorData:
         )
 
     def to_string(self) -> str:
-        s = ""
-        for index in self.indices():
-            l = ""
-            tab = "    "
-            for i in range(len(index) - 1, -1, -1):
-                if index[i] == 0:
-                    l = "\n%s[" % (tab * i) + l
-                else:
-                    break
-            s += l
-            v = self.get(index)
-            s += f"{v:f}"
-            l = ""
-            for i in range(len(index) - 1, -1, -1):
-                if index[i] == self.shape[i] - 1:
-                    is_last = i == len(index) - 1
-                    is_first = i == 0
+        flat_arr = array([self.get(index) for index in self.indices()], dtype=datatype)
+        shape = self.shape
+        strides = [s * flat_arr.itemsize for s in self._strides]
 
-                    if not is_last:
-                        l += "\n" + (tab * i)
-
-                    l += "]"
-
-                    if not is_first:
-                        l += ","
-                else:
-                    break
-            if l:
-                s += l
-            else:
-                s += " "
-        
-        return s
+        arr = np.lib.stride_tricks.as_strided(flat_arr, shape=shape, strides=strides)    
+        return str(arr)    

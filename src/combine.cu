@@ -7,7 +7,7 @@
 
 #define BLOCK_DIM 1024
 #define MAX_DIMS 10
-#define TILE 16
+#define TILE 32
 
 #define ADD_FUNC       1
 #define MUL_FUNC       2
@@ -235,76 +235,51 @@ __global__ void MatrixMultiplyKernel(
     // Tile block row and column
     int ti = threadIdx.y;
     int tj = threadIdx.x;
-
     int block_offset_i = blockIdx.y * TILE;
     int block_offset_j = blockIdx.x * TILE;
 
-    bool debug = ti + tj + block_offset_i + block_offset_j == 0;
-
-    if (debug) {
-      printf("batch: %d, B_a: %d, B_b: %d, B_out: %d, M: %d, N: %d, P: %d\n", batch, B_a, B_b, B_out, M, N, P);
-    }
-    
-    /// BEGIN ASSIGN1_2
-    /// TODO
-    // Hints:
     // 1. Compute the row and column of the output matrix this block will compute
+    int out_row = block_offset_i + ti;
+    int out_col = block_offset_j + tj;
+    
     // 2. Compute the position in the output array that this thread will write to
-    // 3. Iterate over tiles of the two input matrices, read the data into shared memory
-    // 4. Synchronize to make sure the data is available to all threads
-    // 5. Compute the output tile for this thread block
-    // 6. Synchronize to make sure all threads are done computing the output tile for (row, col)
-    // 7. Write the output to global memory
+    int out_pos = batch * out_strides[0] + out_row * out_strides[1] + out_col;
 
+    bool debug = ti + tj == 0;
+
+    // if (debug) {
+    //   printf("\nbatch: %d, B_a: %d, B_b: %d, B_out: %d, M: %d, N: %d, P: %d\n", batch, B_a, B_b, B_out, M, N, P);
+    //   printf("blockIdx.x: %d, blockIdx.y: %d, blockIdx.z: %d\n", blockIdx.x, blockIdx.y, blockIdx.z);
+    // } 
+    
+    // 3. Iterate over tiles of the two input matrices, read the data into shared memory
     float val = 0;
     for (int s = 0; s < N; s += TILE) {
-        // Read from global memory to shared memory
-        // a_shared[ti][tj] = 0;
-        // b_shared[ti][tj] = 0;
+        a_shared[ti][tj] = 0;
+        b_shared[ti][tj] = 0;
 
-        if (batch < B_a && block_offset_i + ti < M && s + tj < N) {
-            float a_val = a_storage[batch * a_batch_stride + (block_offset_i + ti) * a_strides[1] + s + tj];
-            assert(a_val == 0);
-            a_shared[ti][tj] = a_val;
-            assert(a_shared[ti][tj] == a_val);
+        if (batch < B_a && out_row < M && s + tj < N) {
+            a_shared[ti][tj] = a_storage[batch * a_batch_stride + out_row * a_strides[1] + s + tj];
         }
-        if (batch < B_b && s + ti < N && block_offset_j + tj < P) {
-            float b_val = b_storage[batch * b_batch_stride + (s + ti) * b_strides[1] + block_offset_j + tj];
-            assert(b_val == 0);
-            b_shared[ti][tj] = b_val;
-            assert(b_shared[ti][tj] == b_val);
+        if (batch < B_b && s + ti < N && out_col < P) {
+            b_shared[ti][tj] = b_storage[batch * b_batch_stride + (s + ti) * b_strides[1] + out_col];
         }
 
-    
+        // 4. Synchronize to make sure the data is available to all threads
         __syncthreads();
 
-        if (debug) {
-            // print element in a_shared[:2][:2] and b_shared[:2][:2]
-            // for (int i = 0; i < 2; i++) {
-            //     for (int j = 0; j < 2; j++) {
-            //         printf("a_shared[%d][%d]: %f, b_shared[%d][%d]: %f\n", i, j, a_shared[i][j], i, j, b_shared[i][j]);
-            //     }
-            // }
-        }
-
-
-        // if (a_shared[ti][tj] != 0) printf("a_shared[%d][%d] != 0\n", ti, tj);
-        // if (b_shared[ti][tj] != 0) printf("b_shared[%d][%d] != 0\n", ti, tj);
-
-        // Compute sum of tile row and column
+        // 5. Compute the output tile for this thread block
         for (int k = 0; k < TILE; k++) {
-            // assert(a_shared[ti][k] != 0 || b_shared[k][tj] != 0);
             val += a_shared[ti][k] * b_shared[k][tj];
         }
 
+        // 6. Synchronize to make sure all threads are done computing the output tile for (row, col)
         __syncthreads();
     }
 
-    // Write to global memory
-    if (batch < B_out && block_offset_i + ti < M && block_offset_j + tj < P) {
-        // if (val != 0) printf("i: %d, j: %d\n", block_offset_i + ti, block_offset_j + tj);
-        // assert(val == 0);
-        out[batch * out_strides[0] + (block_offset_i + ti) * out_strides[1] + block_offset_j + tj] = val;
+    // 7. Write the output to global memory
+    if (batch < B_out && out_row < M && out_col < P) {
+        out[out_pos] = val;
     }
 }
 
@@ -347,17 +322,18 @@ __global__ void mapKernel(
     int out_index[MAX_DIMS];
     int in_index[MAX_DIMS];
     
-    /// BEGIN ASSIGN1_2
-    /// TODO
-    // Hints:
     // 1. Compute the position in the output array that this thread will write to
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
     // 2. Convert the position to the out_index according to out_shape
+    to_index(tid, out_shape, out_index, shape_size);
     // 3. Broadcast the out_index to the in_index according to in_shape (optional in some cases)
+    broadcast_index(out_index, out_shape, in_shape, in_index, shape_size, shape_size);
     // 4. Calculate the position of element in in_array according to in_index and in_strides
+    int in_pos = index_to_position(in_index, in_strides, shape_size);
     // 5. Calculate the position of element in out_array according to out_index and out_strides
+    int out_pos = index_to_position(out_index, out_strides, shape_size);
     // 6. Apply the unary function to the input element and write the output to the out memory
-    
-    /// END ASSIGN1_2
+    out[out_pos] = fn(fn_id, in_storage[in_pos]);
 }
 
 
@@ -412,7 +388,7 @@ __global__ void reduceKernel(
     // 3. Initialize the reduce_value to the output element
     // 4. Iterate over the reduce_dim dimension of the input array to compute the reduced value
     // 5. Write the reduced value to out memory
-    
+    assert(false && "reduceKernel not Implemented");
     /// END ASSIGN1_2
 }
 
@@ -478,7 +454,7 @@ __global__ void zipKernel(
     // 7.Calculate the position of element in b_array according to b_index and b_strides
     // 8. Apply the binary function to the input elements in a_array & b_array and write the output to the out memory
     
-    assert(false && "Not Implemented");
+    assert(false && "zipKernel not Implemented");
     /// END ASSIGN1_2
 }
 
@@ -538,7 +514,7 @@ void MatrixMultiply(
 
     int threadsPerBlock = TILE;
     dim3 blockDims(threadsPerBlock, threadsPerBlock, 1); // Adjust these values based on your specific requirements
-    dim3 gridDims((m + threadsPerBlock - 1) / threadsPerBlock, (p + threadsPerBlock - 1) / threadsPerBlock, batch);
+    dim3 gridDims((p + threadsPerBlock - 1) / threadsPerBlock, (m + threadsPerBlock - 1) / threadsPerBlock, batch);
     MatrixMultiplyKernel<<<gridDims, blockDims>>>(
         d_out, d_out_shape, d_out_strides, d_a, d_a_shape, d_a_strides, d_b, d_b_shape, d_b_strides
     );
@@ -597,7 +573,7 @@ void tensorMap(
     cudaMemcpy(d_in_shape, in_shape, shape_size * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_in_strides, in_strides, shape_size * sizeof(int), cudaMemcpyHostToDevice);
     
-    int threadsPerBlock = 32;
+    int threadsPerBlock = TILE;
     int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
     mapKernel<<<blocksPerGrid, threadsPerBlock>>>(
       d_out, d_out_shape, d_out_strides, out_size, 
