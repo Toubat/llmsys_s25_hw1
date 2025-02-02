@@ -241,7 +241,11 @@ __global__ void MatrixMultiplyKernel(
     // 6. Synchronize to make sure all threads are done computing the output tile for (row, col)
     // 7. Write the output to global memory
 
-    assert(false && "Not Implemented");
+    if (threadIdx.x == 0 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0) {
+        printf("Log in MatrixMultiplyKernel\n");
+        printf("a_batch_stride: %d\n", a_batch_stride);
+        printf("b_batch_stride: %d\n", b_batch_stride);
+    }
     /// END ASSIGN1_2
 }
 
@@ -294,7 +298,6 @@ __global__ void mapKernel(
     // 5. Calculate the position of element in out_array according to out_index and out_strides
     // 6. Apply the unary function to the input element and write the output to the out memory
     
-    assert(false && "Not Implemented");
     /// END ASSIGN1_2
 }
 
@@ -351,7 +354,6 @@ __global__ void reduceKernel(
     // 4. Iterate over the reduce_dim dimension of the input array to compute the reduced value
     // 5. Write the reduced value to out memory
     
-    assert(false && "Not Implemented");
     /// END ASSIGN1_2
 }
 

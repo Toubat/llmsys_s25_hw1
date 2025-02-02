@@ -229,12 +229,27 @@ class CudaKernelOps(TensorOps):
         assert len(b._tensor._shape) == 3
         assert len(b._tensor._strides) == 3
 
-        # BEGIN ASSIGN1_2
-        # TODO
-        # 1. Call the Matmul function implemented in CUDA
+        # print()
+        # print(a.shape, a._tensor.strides)
+        # print(b.shape, b._tensor.strides)
+        # print(out.shape, out._tensor.strides)
 
-        raise NotImplementedError("Matrix Multiply Function Not Implemented Yet")
-        # END ASSIGN1_2
+        batch, m, p = a.shape[0], a.shape[1], b.shape[2]
+
+        lib.MatrixMultiply(
+            out._tensor._storage,
+            np.array(out.shape, dtype=np.int32),
+            np.array(out._tensor._strides, dtype=np.int32),
+            a._tensor._storage,
+            np.array(a.shape, dtype=np.int32),
+            np.array(a._tensor._strides, dtype=np.int32),
+            b._tensor._storage,
+            np.array(b.shape, dtype=np.int32),
+            np.array(b._tensor._strides, dtype=np.int32),
+            batch,
+            m,
+            p,
+        )
         
         # Undo 3d if we added it.
         if both_2d:
