@@ -76,8 +76,6 @@ class CudaKernelOps(TensorOps):
             # Define the return type for the tensorMap function
             lib.tensorMap.restype = None
 
-            assert out.shape == a.shape, "Output shape must match input shape: {} != {}".format(out.shape, a.shape)
-
             # Call the function
             lib.tensorMap(
                 out._tensor._storage,
@@ -126,12 +124,25 @@ class CudaKernelOps(TensorOps):
             # Define the return type for the tensorZip function
             lib.tensorZip.restype = None
 
-            # BEGIN ASSIGN1_2
-            # TODO
-            # 1. Call the tensorZip function implemented in CUDA
-
-            raise NotImplementedError("Zip Function Not Implemented Yet")
-            # END ASSIGN1_2
+            # Call the tensorZip function implemented in CUDA
+            lib.tensorZip(
+                out._tensor._storage,
+                out._tensor._shape.astype(np.int32),
+                out._tensor._strides.astype(np.int32),
+                out.size,
+                len(out.shape),
+                a._tensor._storage,
+                a._tensor._shape.astype(np.int32),
+                a._tensor._strides.astype(np.int32),
+                a.size,
+                len(a.shape),
+                b._tensor._storage,
+                b._tensor._shape.astype(np.int32),
+                b._tensor._strides.astype(np.int32),
+                b.size,
+                len(b.shape),
+                fn_id,
+            )
             
             return out
 
@@ -166,12 +177,19 @@ class CudaKernelOps(TensorOps):
             # Define the return type for the tensorReduce function
             lib.tensorReduce.restype = None
 
-            # BEGIN ASSIGN1_2
-            # TODO
-            # 1. Call the tensorReduce function implemented in CUDA
-            
-            raise NotImplementedError("Reduce Function Not Implemented Yet")
-            # END ASSIGN1_2
+            lib.tensorReduce(
+                out._tensor._storage,
+                out._tensor._shape.astype(np.int32),
+                out._tensor._strides.astype(np.int32),
+                out.size,
+                a._tensor._storage,
+                a._tensor._shape.astype(np.int32),
+                a._tensor._strides.astype(np.int32),
+                dim,
+                reduce_value,
+                len(a.shape),
+                fn_id
+            )
             
             return out
 
@@ -233,11 +251,6 @@ class CudaKernelOps(TensorOps):
         assert len(a._tensor._strides) == 3
         assert len(b._tensor._shape) == 3
         assert len(b._tensor._strides) == 3
-
-        # print()
-        # print(a.shape, a._tensor.strides)
-        # print(b.shape, b._tensor.strides)
-        # print(out.shape, out._tensor.strides)
 
         batch, m, p = a.shape[0], a.shape[1], b.shape[2]
 

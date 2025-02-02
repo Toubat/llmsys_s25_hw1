@@ -157,6 +157,26 @@ __device__ void to_index(int ordinal, const int* shape, int* out_index, int num_
     }
 }
 
+__device__ bool is_valid_index(const int* index, const int* shape, int num_dims) {
+  /**
+   * Check if an index is within the bounds of a tensor shape.
+   * Args:
+   *    index: index tuple of ints
+   *    shape: tensor shape
+   *    num_dims: number of dimensions in the tensor
+   *
+   * Returns:
+   *    bool - true if the index is valid, false otherwise
+  */
+    for (int i = 0; i < num_dims; ++i) {
+        if (index[i] < 0 || index[i] >= shape[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
 __device__ void broadcast_index(const int* big_index, const int* big_shape, const int* shape, int* out_index, int num_dims_big, int num_dims) {
   /**
    * Convert a big_index into big_shape to a smaller out_index into shape following broadcasting rules.
@@ -333,7 +353,9 @@ __global__ void mapKernel(
     // 5. Calculate the position of element in out_array according to out_index and out_strides
     int out_pos = index_to_position(out_index, out_strides, shape_size);
     // 6. Apply the unary function to the input element and write the output to the out memory
-    out[out_pos] = fn(fn_id, in_storage[in_pos]);
+    if (is_valid_index(in_index, in_shape, shape_size) && is_valid_index(out_index, out_shape, shape_size)) {
+      out[out_pos] = fn(fn_id, in_storage[in_pos]);
+    }
 }
 
 
@@ -388,7 +410,7 @@ __global__ void reduceKernel(
     // 3. Initialize the reduce_value to the output element
     // 4. Iterate over the reduce_dim dimension of the input array to compute the reduced value
     // 5. Write the reduced value to out memory
-    assert(false && "reduceKernel not Implemented");
+    // assert(false && "reduceKernel not Implemented");
     /// END ASSIGN1_2
 }
 
@@ -442,20 +464,24 @@ __global__ void zipKernel(
     int a_index[MAX_DIMS];
     int b_index[MAX_DIMS];
 
-    /// BEGIN ASSIGN1_2
-    /// TODO
-    // Hints:
     // 1. Compute the position in the output array that this thread will write to
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
     // 2. Convert the position to the out_index according to out_shape
-    // 3. Calculate the position of element in out_array according to out_index and out_strides
+    to_index(tid, out_shape, out_index, out_shape_size);
+    // 3. Calculate the position of element in out_array according to out_index and out_strides 
+    int out_pos = index_to_position(out_index, out_strides, out_shape_size);
     // 4. Broadcast the out_index to the a_index according to a_shape
+    broadcast_index(out_index, out_shape, a_shape, a_index, out_shape_size, a_shape_size);
     // 5. Calculate the position of element in a_array according to a_index and a_strides
+    int a_pos = index_to_position(a_index, a_strides, a_shape_size);
     // 6. Broadcast the out_index to the b_index according to b_shape
+    broadcast_index(out_index, out_shape, b_shape, b_index, out_shape_size, b_shape_size);
     // 7.Calculate the position of element in b_array according to b_index and b_strides
+    int b_pos = index_to_position(b_index, b_strides, b_shape_size);
     // 8. Apply the binary function to the input elements in a_array & b_array and write the output to the out memory
-    
-    assert(false && "zipKernel not Implemented");
-    /// END ASSIGN1_2
+    if (is_valid_index(a_index, a_shape, a_shape_size) && is_valid_index(b_index, b_shape, b_shape_size) && is_valid_index(out_index, out_shape, out_shape_size)) {
+        out[out_pos] = fn(fn_id, a_storage[a_pos], b_storage[b_pos]);
+    }
 }
 
 
@@ -644,7 +670,7 @@ void tensorZip(
     cudaMemcpy(d_b_strides, b_strides, b_shape_size * sizeof(int), cudaMemcpyHostToDevice);
 
     // Launch kernel
-    int threadsPerBlock = 32;
+    int threadsPerBlock = TILE;
     int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
     zipKernel<<<blocksPerGrid, threadsPerBlock>>>(
       d_out, d_out_shape, d_out_strides, out_size, out_shape_size,
