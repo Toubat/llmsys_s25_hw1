@@ -261,19 +261,11 @@ __global__ void MatrixMultiplyKernel(
     // 1. Compute the row and column of the output matrix this block will compute
     int out_row = block_offset_i + ti;
     int out_col = block_offset_j + tj;
-    
     // 2. Compute the position in the output array that this thread will write to
     int out_pos = batch * out_strides[0] + out_row * out_strides[1] + out_col;
-
-    bool debug = ti + tj == 0;
-
-    // if (debug) {
-    //   printf("\nbatch: %d, B_a: %d, B_b: %d, B_out: %d, M: %d, N: %d, P: %d\n", batch, B_a, B_b, B_out, M, N, P);
-    //   printf("blockIdx.x: %d, blockIdx.y: %d, blockIdx.z: %d\n", blockIdx.x, blockIdx.y, blockIdx.z);
-    // } 
-    
-    // 3. Iterate over tiles of the two input matrices, read the data into shared memory
+    // 3. Initialize the output value to 0
     float val = 0;
+    // 4. Iterate over tiles of the two input matrices, read the data into shared memory
     for (int s = 0; s < N; s += TILE) {
         a_shared[ti][tj] = 0;
         b_shared[ti][tj] = 0;
@@ -285,19 +277,19 @@ __global__ void MatrixMultiplyKernel(
             b_shared[ti][tj] = b_storage[batch * b_batch_stride + (s + ti) * b_strides[1] + out_col];
         }
 
-        // 4. Synchronize to make sure the data is available to all threads
+        // 5. Synchronize to make sure the data is available to all threads
         __syncthreads();
 
-        // 5. Compute the output tile for this thread block
+        // 6. Compute the output tile for this thread block
         for (int k = 0; k < TILE; k++) {
             val += a_shared[ti][k] * b_shared[k][tj];
         }
 
-        // 6. Synchronize to make sure all threads are done computing the output tile for (row, col)
+        // 7. Synchronize to make sure all threads are done computing the output tile for (row, col)
         __syncthreads();
     }
 
-    // 7. Write the output to global memory
+    // 8. Write the output to global memory
     if (batch < B_out && out_row < M && out_col < P) {
         out[out_pos] = val;
     }
@@ -402,16 +394,36 @@ __global__ void reduceKernel(
 
     // __shared__ double cache[BLOCK_DIM]; // Uncomment this line if you want to use shared memory to store partial results
     int out_index[MAX_DIMS];
+    int a_index[MAX_DIMS];
 
-    /// BEGIN ASSIGN1_2
-    /// TODO
     // 1. Define the position of the output element that this thread or this block will write to
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
     // 2. Convert the out_pos to the out_index according to out_shape
+    to_index(tid, out_shape, out_index, shape_size);
+    // Copy out_index into a_index so that a_index matches the coordinates of the output element
+    // for all dimensions except the reduction dimension.
+    for (int d = 0; d < shape_size; d++) {
+        a_index[d] = out_index[d];
+    }
     // 3. Initialize the reduce_value to the output element
+    float val = reduce_value;
     // 4. Iterate over the reduce_dim dimension of the input array to compute the reduced value
+    for (int i = 0; i < a_shape[reduce_dim]; i++) {
+        // Compute the index of the element in the input array
+        a_index[reduce_dim] = i;
+        // Compute the position of the element in the input array according to a_index and a_strides
+        int a_pos = index_to_position(a_index, a_strides, shape_size);
+        // Apply the reduce function to the input element and the reduced value
+        if (is_valid_index(a_index, a_shape, shape_size)) {
+            val = fn(fn_id, val, a_storage[a_pos]);
+        }
+    }
+
     // 5. Write the reduced value to out memory
-    // assert(false && "reduceKernel not Implemented");
-    /// END ASSIGN1_2
+    int out_pos = index_to_position(out_index, out_strides, shape_size);
+    if (is_valid_index(out_index, out_shape, shape_size)) {
+        out[out_pos] = val;
+    }
 }
 
 __global__ void zipKernel(
@@ -737,7 +749,7 @@ void tensorReduce(
     cudaMemcpy(d_a_strides, a_strides, shape_size * sizeof(int), cudaMemcpyHostToDevice);
     
     // Launch kernel
-    int threadsPerBlock = 32;
+    int threadsPerBlock = TILE;
     int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
     reduceKernel<<<blocksPerGrid, threadsPerBlock>>>(
         d_out, d_out_shape, d_out_strides, out_size, 

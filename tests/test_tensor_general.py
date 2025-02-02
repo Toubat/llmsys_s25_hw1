@@ -3,7 +3,7 @@ from typing import Callable, Dict, Iterable, List, Tuple
 import numpy as np
 import numba
 import pytest
-from hypothesis import given, settings
+from hypothesis import given, settings, HealthCheck
 from hypothesis.strategies import DataObject, data, integers, lists, permutations
 
 import minitorch
@@ -97,7 +97,7 @@ def test_cuda_two_grad(
 
 
 @given(data())
-@settings(max_examples=25)
+@settings(max_examples=25, suppress_health_check=(HealthCheck.data_too_large,))
 @pytest.mark.parametrize("fn", two_arg)
 @pytest.mark.parametrize("backend", backend_tests)
 def test_cuda_two_grad_broadcast(
@@ -155,18 +155,155 @@ def test_cuda_reduce_sum_practice2(
     assert_close(s, out[0])
 
 
+reduce_2d_dims = [
+    (1, 2),
+    (1, 4),
+    (2, 1),
+    (4, 1),
+    (2, 2),
+    (4, 8),
+    (8, 4),
+    (16, 16),
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (512, 512),
+]
+
+
+@pytest.mark.parametrize("m,n", reduce_2d_dims)
 @pytest.mark.parametrize("backend", backend_tests)
 def test_cuda_reduce_sum_practice3(
-    backend: str,
+    m, n, backend: str  
 ) -> None:
-    x = [[random.random() for i in range(32)] for j in range(16)]
+    x = [[random.random() for _ in range(n)] for _ in range(m)]
     b = minitorch.tensor(x)
     s = b.sum(1)
     b2 = minitorch.tensor(x, backend=shared[backend])
     out = b2.sum(1)
-    for i in range(16):
+    for i in range(m):
         assert_close(s[i, 0], out[i, 0])
 
+
+reduce_3d_dims = [
+    (1, 2, 3),
+    (2, 2, 2),
+    (4, 8, 16),
+    (16, 16, 16),
+    (32, 32, 32),
+    (64, 64, 64),
+    (33, 128, 48),
+    (21, 127, 43),
+]
+
+@pytest.mark.parametrize("m,n,p", reduce_3d_dims)
+@pytest.mark.parametrize("backend", backend_tests)
+def test_cuda_reduce_sum_3d(m: int, n: int, p: int, backend: str) -> None:
+    """
+    Test a sum reduction along dimension 1 (i.e. reduce the n dimension) for a 3D tensor.
+    Given an input of shape (m, n, p), the result should have shape (m, p).
+    """
+    # Create a 3D tensor (as nested lists) of shape (m, n, p) with random floats.
+    x = [[[random.random() for _ in range(p)] for _ in range(n)] for _ in range(m)]
+    
+    # Create a tensor using the default backend.
+    b = minitorch.tensor(x)
+    # Perform reduction along dimension 1.
+    s = b.sum(1)
+    
+    # Create a tensor using the specified CUDA backend.
+    b2 = minitorch.tensor(x, backend=shared[backend])
+    # Perform the same reduction on the CUDA tensor.
+    out = b2.sum(1)
+    
+    np.testing.assert_allclose(
+        s.to_numpy()[:, 0, :],
+        out.to_numpy()[:, 0, :],
+        rtol=1e-5,
+        atol=1e-5
+    )
+
+
+reduce_4d_dims = [
+    (1, 2, 3, 4),
+    (2, 2, 2, 2),
+    (4, 8, 16, 8),
+    (16, 16, 16, 16),
+    (32, 32, 32, 32),
+    (21, 64, 43, 5),
+]
+
+@pytest.mark.parametrize("a,b,c,d", reduce_4d_dims)
+@pytest.mark.parametrize("backend", backend_tests)
+def test_cuda_reduce_sum_4d(a: int, b: int, c: int, d: int, backend: str) -> None:
+    """
+    Test a sum reduction along dimension 2 for a 4D tensor.
+    Given an input of shape (a, b, c, d), reducing along dim 2 produces an output of shape (a, b, d).
+    """
+    # Create a 4D tensor (as nested lists) with random floats.
+    x = [[[[random.random() for _ in range(d)]
+           for _ in range(c)]
+          for _ in range(b)]
+         for _ in range(a)]
+    
+    # Create the tensor using the default backend.
+    b_default = minitorch.tensor(x)
+    expected = b_default.sum(2)  # reduce dimension 2
+    
+    # Create the tensor using the specified CUDA backend.
+    b_cuda = minitorch.tensor(x, backend=shared[backend])
+    result = b_cuda.sum(2)
+    
+    # Convert both results to NumPy arrays and compare.
+    np.testing.assert_allclose(
+        expected.to_numpy(),
+        result.to_numpy(),
+        rtol=1e-5,
+        atol=1e-5,
+        err_msg=f"4D reduction failed for shape ({a},{b},{c},{d}) on backend {backend}"
+    )
+
+# Example 5D shapes: (p, q, r, s, t)
+reduce_5d_dims = [
+    (1, 2, 3, 4, 5),
+    (2, 2, 2, 2, 2),
+    (3, 4, 5, 6, 7),
+    (4, 4, 4, 4, 4),
+    (8, 8, 8, 8, 8),
+    (16, 4, 16, 8, 3),
+]
+
+@pytest.mark.parametrize("p,q,r,s,t", reduce_5d_dims)
+@pytest.mark.parametrize("backend", backend_tests)
+def test_cuda_reduce_sum_5d(p: int, q: int, r: int, s: int, t: int, backend: str) -> None:
+    """
+    Test a sum reduction along dimension 3 for a 5D tensor.
+    Given an input of shape (p, q, r, s, t), reducing along dim 3 produces an output of shape (p, q, r, t).
+    """
+    # Create a 5D tensor (as nested lists) with random floats.
+    x = [[[[[random.random() for _ in range(t)]
+             for _ in range(s)]
+            for _ in range(r)]
+           for _ in range(q)]
+         for _ in range(p)]
+    
+    # Create the tensor using the default backend.
+    b_default = minitorch.tensor(x)
+    expected = b_default.sum(3)  # reduce dimension 3
+    
+    # Create the tensor using the specified CUDA backend.
+    b_cuda = minitorch.tensor(x, backend=shared[backend])
+    result = b_cuda.sum(3)
+    
+    # Convert both results to NumPy arrays and compare.
+    np.testing.assert_allclose(
+        expected.to_numpy(),
+        result.to_numpy(),
+        rtol=1e-5,
+        atol=1e-5,
+        err_msg=f"5D reduction failed for shape ({p},{q},{r},{s},{t}) on backend {backend}"
+    )
     
 matmul_dims = [
     (2, 2, 2),
