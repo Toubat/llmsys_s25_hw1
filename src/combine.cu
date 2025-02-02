@@ -3,10 +3,11 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <iomanip>
 
 #define BLOCK_DIM 1024
 #define MAX_DIMS 10
-#define TILE 32
+#define TILE 16
 
 #define ADD_FUNC       1
 #define MUL_FUNC       2
@@ -183,7 +184,6 @@ __device__ void broadcast_index(const int* big_index, const int* big_shape, cons
     }
 }
 
-
 __global__ void MatrixMultiplyKernel(
     float* out,
     const int* out_shape,
@@ -225,11 +225,26 @@ __global__ void MatrixMultiplyKernel(
 
     // In each block, we will compute a batch of the output matrix
     // All the threads in the block will work together to compute this batch
+    int B_a = a_shape[0], B_b = b_shape[0], B_out = out_shape[0];
+    int M = out_shape[1], N = a_shape[2], P = b_shape[2];
+
     int batch = blockIdx.z;
     int a_batch_stride = a_shape[0] > 1 ? a_strides[0] : 0;
     int b_batch_stride = b_shape[0] > 1 ? b_strides[0] : 0;
 
+    // Tile block row and column
+    int ti = threadIdx.y;
+    int tj = threadIdx.x;
 
+    int block_offset_i = blockIdx.y * TILE;
+    int block_offset_j = blockIdx.x * TILE;
+
+    bool debug = ti + tj + block_offset_i + block_offset_j == 0;
+
+    if (debug) {
+      printf("batch: %d, B_a: %d, B_b: %d, B_out: %d, M: %d, N: %d, P: %d\n", batch, B_a, B_b, B_out, M, N, P);
+    }
+    
     /// BEGIN ASSIGN1_2
     /// TODO
     // Hints:
@@ -241,12 +256,56 @@ __global__ void MatrixMultiplyKernel(
     // 6. Synchronize to make sure all threads are done computing the output tile for (row, col)
     // 7. Write the output to global memory
 
-    if (threadIdx.x == 0 && threadIdx.y == 0 && blockIdx.x == 0 && blockIdx.y == 0) {
-        printf("Log in MatrixMultiplyKernel\n");
-        printf("a_batch_stride: %d\n", a_batch_stride);
-        printf("b_batch_stride: %d\n", b_batch_stride);
+    float val = 0;
+    for (int s = 0; s < N; s += TILE) {
+        // Read from global memory to shared memory
+        // a_shared[ti][tj] = 0;
+        // b_shared[ti][tj] = 0;
+
+        if (batch < B_a && block_offset_i + ti < M && s + tj < N) {
+            float a_val = a_storage[batch * a_batch_stride + (block_offset_i + ti) * a_strides[1] + s + tj];
+            assert(a_val == 0);
+            a_shared[ti][tj] = a_val;
+            assert(a_shared[ti][tj] == a_val);
+        }
+        if (batch < B_b && s + ti < N && block_offset_j + tj < P) {
+            float b_val = b_storage[batch * b_batch_stride + (s + ti) * b_strides[1] + block_offset_j + tj];
+            assert(b_val == 0);
+            b_shared[ti][tj] = b_val;
+            assert(b_shared[ti][tj] == b_val);
+        }
+
+    
+        __syncthreads();
+
+        if (debug) {
+            // print element in a_shared[:2][:2] and b_shared[:2][:2]
+            // for (int i = 0; i < 2; i++) {
+            //     for (int j = 0; j < 2; j++) {
+            //         printf("a_shared[%d][%d]: %f, b_shared[%d][%d]: %f\n", i, j, a_shared[i][j], i, j, b_shared[i][j]);
+            //     }
+            // }
+        }
+
+
+        // if (a_shared[ti][tj] != 0) printf("a_shared[%d][%d] != 0\n", ti, tj);
+        // if (b_shared[ti][tj] != 0) printf("b_shared[%d][%d] != 0\n", ti, tj);
+
+        // Compute sum of tile row and column
+        for (int k = 0; k < TILE; k++) {
+            // assert(a_shared[ti][k] != 0 || b_shared[k][tj] != 0);
+            val += a_shared[ti][k] * b_shared[k][tj];
+        }
+
+        __syncthreads();
     }
-    /// END ASSIGN1_2
+
+    // Write to global memory
+    if (batch < B_out && block_offset_i + ti < M && block_offset_j + tj < P) {
+        // if (val != 0) printf("i: %d, j: %d\n", block_offset_i + ti, block_offset_j + tj);
+        // assert(val == 0);
+        out[batch * out_strides[0] + (block_offset_i + ti) * out_strides[1] + block_offset_j + tj] = val;
+    }
 }
 
 
@@ -426,6 +485,19 @@ __global__ void zipKernel(
 
 extern "C" {
 
+void print_2d_array(const float* arr, int rows, int cols, int width = 8) {
+    std::cout << "Printing 2D array\n";
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            // Compute the index assuming row-major order
+            int index = i * cols + j;
+            std::cout << std::setw(width) << arr[index] << " ";
+        }
+        std::cout << "\n";
+    }
+    std::cout << "\n";
+}
+
 void MatrixMultiply(
     float* out,
     int* out_shape,
@@ -464,7 +536,7 @@ void MatrixMultiply(
     cudaMemcpy(d_b_shape, b_shape, 3 * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_b_strides, b_strides, 3 * sizeof(int), cudaMemcpyHostToDevice);
 
-    int threadsPerBlock = 32;
+    int threadsPerBlock = TILE;
     dim3 blockDims(threadsPerBlock, threadsPerBlock, 1); // Adjust these values based on your specific requirements
     dim3 gridDims((m + threadsPerBlock - 1) / threadsPerBlock, (p + threadsPerBlock - 1) / threadsPerBlock, batch);
     MatrixMultiplyKernel<<<gridDims, blockDims>>>(

@@ -176,6 +176,8 @@ class CudaKernelOps(TensorOps):
     def matrix_multiply(a: Tensor, b: Tensor) -> Tensor:
         both_2d = 0
         if len(a.shape) == 2:
+            print(a)
+            print(a.contiguous())
             a = a.contiguous().view(1, a.shape[0], a.shape[1])
             both_2d += 1
         if len(b.shape) == 2:
