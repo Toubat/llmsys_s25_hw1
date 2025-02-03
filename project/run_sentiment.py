@@ -6,8 +6,9 @@ import embeddings
 import sys
 sys.path.append('../')
 import minitorch
+from minitorch.tensor import Tensor
 
-from datasets import load_dataset
+from datasets.load import load_dataset
 
 backend_name = "CudaKernelOps"
 
@@ -28,34 +29,32 @@ class Linear(minitorch.Module):
         super().__init__()
         
         # BEGIN ASSIGN1_3
-        # TODO
         # 1. Initialize self.weights to be a random parameter of (in_size, out_size).
         # 2. Initialize self.bias to be a random parameter of (out_size)
         # 3. Set self.out_size to be out_size
-        # HINT: make sure to use the RParam function
-    
-        raise NotImplementedError
-    
+        self.weights = RParam(in_size, out_size)
+        self.bias = RParam(out_size)
+        self.out_size = out_size
         # END ASSIGN1_3
 
-    def forward(self, x):
+    def forward(self, x: Tensor):
         
         batch, in_size = x.shape
         
         # BEGIN ASSIGN1_3
-        # TODO
         # 1. Reshape the input x to be of size (batch, in_size)
         # 2. Reshape self.weights to be of size (in_size, self.out_size)
         # 3. Apply Matrix Multiplication on input x and self.weights, and reshape the output to be of size (batch, self.out_size)
         # 4. Add self.bias
         # HINT: You can use the view function of minitorch.tensor for reshape
-
-        raise NotImplementedError
-    
+        x = x.view(batch, in_size)
+        w = self.weights.value.view(in_size, self.out_size)
+        b = self.bias.value.view(1, self.out_size)
+        
+        return x @ w + b
         # END ASSIGN1_3
         
         
-
 class Network(minitorch.Module):
     """
     Implement a MLP for SST-2 sentence sentiment classification.
@@ -80,21 +79,18 @@ class Network(minitorch.Module):
         self.dropout_prob = dropout_prob
                 
         # BEGIN ASSIGN1_3
-        # TODO
         # 1. Construct two linear layers: the first one is embedding_dim * hidden_dim, the second one is hidden_dim * 1
-
-        raise NotImplementedError
+        self.linear1 = Linear(embedding_dim, hidden_dim)
+        self.linear2 = Linear(hidden_dim, 1)
         # END ASSIGN1_3
         
-        
 
-    def forward(self, embeddings):
+    def forward(self, embeddings: Tensor):
         """
         embeddings tensor: [batch x sentence length x embedding dim]
         """
     
         # BEGIN ASSIGN1_3
-        # TODO
         # 1. Average the embeddings on the sentence length dimension to obtain a tensor of (batch, embedding_dim)
         # 2. Apply the first linear layer
         # 3. Apply ReLU and dropout (with dropout probability=self.dropout_prob)
@@ -102,8 +98,16 @@ class Network(minitorch.Module):
         # 5. Apply sigmoid and reshape to (batch)
         # HINT: You can use minitorch.dropout for dropout, and minitorch.tensor.relu for ReLU
         
-        raise NotImplementedError
-    
+        batch, _, embed_dim = embeddings.shape
+        assert embed_dim == self.embedding_dim
+        
+        x = embeddings.mean(1).view(batch, self.embedding_dim) # (batch, embedding_dim)
+        x = self.linear1(x) # (batch, hidden_dim)
+        x = minitorch.dropout(x.relu(), self.dropout_prob) # (batch, hidden_dim)
+        x = self.linear2(x) # (batch, 1)
+        x = x.sigmoid().view(batch) # (batch,)
+
+        return x
         # END ASSIGN1_3
 
 
