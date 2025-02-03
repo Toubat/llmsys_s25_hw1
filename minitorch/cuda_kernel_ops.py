@@ -216,13 +216,13 @@ class CudaKernelOps(TensorOps):
         more_3d = False
         if len(out.shape) > 3:
             more_3d = True
-            out = out.view(np.prod(out.shape[:-2]), out.shape[-2], out.shape[-1])
+            out = out.view(np.prod(out.shape[:-2]), out.shape[-2], out.shape[-1])  # type: ignore
             nshape = out._tensor._shape
             nstrides = out._tensor._strides
         if len(a.shape) > 3:
-            a = a.contiguous().view(np.prod(a.shape[:-2]), a.shape[-2], a.shape[-1])
+            a = a.contiguous().view(np.prod(a.shape[:-2]), a.shape[-2], a.shape[-1])  # type: ignore
         if len(b.shape) > 3:
-            b = b.contiguous().view(np.prod(b.shape[:-2]), b.shape[-2], b.shape[-1])
+            b = b.contiguous().view(np.prod(b.shape[:-2]), b.shape[-2], b.shape[-1])  # type: ignore
         
         assert a.shape[0] == b.shape[0]
         assert a.shape[0] == out.shape[0]

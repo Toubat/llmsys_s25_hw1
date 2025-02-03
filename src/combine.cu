@@ -402,9 +402,7 @@ __global__ void reduceKernel(
     to_index(tid, out_shape, out_index, shape_size);
     // Copy out_index into a_index so that a_index matches the coordinates of the output element
     // for all dimensions except the reduction dimension.
-    for (int d = 0; d < shape_size; d++) {
-        a_index[d] = out_index[d];
-    }
+    for (int d = 0; d < shape_size; d++) a_index[d] = out_index[d];
     // 3. Initialize the reduce_value to the output element
     float val = reduce_value;
     // 4. Iterate over the reduce_dim dimension of the input array to compute the reduced value
@@ -425,6 +423,100 @@ __global__ void reduceKernel(
         out[out_pos] = val;
     }
 }
+
+
+__global__ void parallelReduceKernel(
+    float* out,
+    int* out_shape,
+    int* out_strides,
+    int out_size,
+    float* a_storage,
+    int* a_shape,
+    int* a_strides,
+    int reduce_dim,
+    float reduce_value,
+    int shape_size,
+    int fn_id
+) {
+  /**
+   * Reduce function. Apply a reduce function to elements of the input array a and store the result in the output array.
+   * Optimization:
+   * Parallelize over the reduction operation. Each kernel performs one reduction.
+   * e.g. a = [[1, 2, 3], [4, 5, 6]], kernel0 computes reduce([1, 2, 3]), kernel1 computes reduce([4, 5, 6]).
+   *
+   * You may find the following functions useful:
+   * - index_to_position: converts an index to a position in a compact array
+   * - to_index: converts a position to an index in a multidimensional array
+   *
+   * Args:
+   *  out: compact 1D array of size out_size to write the output to
+   *  out_shape: shape of the output array
+   *  out_strides: strides of the output array
+   *  out_size: size of the output array
+   *  a_storage: compact 1D array of size in_size
+   *  a_shape: shape of the input array
+   *  a_strides: strides of the input array
+   *  reduce_dim: dimension to reduce on
+   *  reduce_value: initial value for the reduction
+   *  shape_size: number of dimensions in the input & output array, assert dimensions are the same
+   *  fn_id: id of the reduce function, currently only support add, multiply, and max
+   *
+   *
+   * Returns:
+   *  None (Fills in out array)
+   */
+
+    __shared__ double cache[BLOCK_DIM]; 
+    int out_index[MAX_DIMS];
+    int a_index[MAX_DIMS];
+
+    // Compute the position of the output element that this thread or this block will write to
+    int bid = blockIdx.x;
+    // Compute the position to write to the shared memory
+    int tid = threadIdx.x;
+    // Compute the out_index according to out_shape
+    to_index(bid, out_shape, out_index, shape_size);
+    // Copy out_index into a_index so that a_index matches the coordinates of the output element
+    // for all dimensions except the reduction dimension.
+    for (int d = 0; d < shape_size; d++) a_index[d] = out_index[d];
+    // Initialize the reduce_value to the output element
+    double val = reduce_value;
+    // Iterate over each chunk of the reduced dimension of input array, compute the reduced value
+    for (int i = 0; i < a_shape[reduce_dim]; i += BLOCK_DIM) {
+        // Update the a_index to point to the element in the input array
+        a_index[reduce_dim] = i + tid;
+
+        // Copy the element to the shared memory
+        if (is_valid_index(a_index, a_shape, shape_size)) {
+            // Compute the position of the element in the input array according to a_index and a_strides
+            int a_pos = index_to_position(a_index, a_strides, shape_size);
+            cache[tid] = a_storage[a_pos];
+        }
+
+        // Synchronize to make sure all threads have copied the data to the shared memory
+        __syncthreads();
+
+        // Parallel reduction with tree-like structure
+        for (int s = 1; s < BLOCK_DIM; s *= 2) {
+            if (tid % (2 * s) == 0 && tid + s < BLOCK_DIM) {
+                cache[tid] = fn(fn_id, cache[tid], cache[tid + s]);
+            }
+            __syncthreads();
+        }
+
+        // Update the reduced value
+        if (tid == 0) {
+            val = fn(fn_id, val, cache[0]);
+        }
+    }
+
+    // Write the reduced value to out memory
+    int out_pos = index_to_position(out_index, out_strides, shape_size);
+    if (is_valid_index(out_index, out_shape, shape_size)) {
+        out[out_pos] = val;
+    }
+}
+
 
 __global__ void zipKernel(
     float* out,
@@ -715,7 +807,6 @@ void tensorZip(
 }
 
 
-
 void tensorReduce(
     float* out, 
     int* out_shape, 
@@ -748,9 +839,18 @@ void tensorReduce(
     cudaMemcpy(d_a_shape, a_shape, shape_size * sizeof(int), cudaMemcpyHostToDevice);
     cudaMemcpy(d_a_strides, a_strides, shape_size * sizeof(int), cudaMemcpyHostToDevice);
     
-    // Launch kernel
-    int threadsPerBlock = TILE;
-    int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
+    // Launch reduce kernel
+    // int threadsPerBlock = TILE;
+    // int blocksPerGrid = (out_size + threadsPerBlock - 1) / threadsPerBlock;
+    // reduceKernel<<<blocksPerGrid, threadsPerBlock>>>(
+    //     d_out, d_out_shape, d_out_strides, out_size, 
+    //     d_a, d_a_shape, d_a_strides, 
+    //     reduce_dim, reduce_value, shape_size, fn_id
+    // );
+
+    // Launch parallel reduce kernel
+    int threadsPerBlock = BLOCK_DIM;
+    int blocksPerGrid = out_size;
     reduceKernel<<<blocksPerGrid, threadsPerBlock>>>(
         d_out, d_out_shape, d_out_strides, out_size, 
         d_a, d_a_shape, d_a_strides, 
@@ -776,5 +876,6 @@ void tensorReduce(
     cudaFree(d_a_shape);
     cudaFree(d_a_strides);
 }
+
 
 }

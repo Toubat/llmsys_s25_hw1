@@ -18,7 +18,7 @@ shared: Dict[str, TensorBackend] = {}
 from minitorch.cuda_kernel_ops import CudaKernelOps
 
 
-if numba.cuda.is_available():
+if numba.cuda.is_available():  # type: ignore
     backend_tests = [pytest.param("cuda")]
     matmul_tests = [pytest.param("cuda")]
     shared["cuda"] = minitorch.TensorBackend(CudaKernelOps)
@@ -216,7 +216,7 @@ def test_cuda_reduce_sum_3d(m: int, n: int, p: int, backend: str) -> None:
     b2 = minitorch.tensor(x, backend=shared[backend])
     # Perform the same reduction on the CUDA tensor.
     out = b2.sum(1)
-    
+
     np.testing.assert_allclose(
         s.to_numpy()[:, 0, :],
         out.to_numpy()[:, 0, :],
