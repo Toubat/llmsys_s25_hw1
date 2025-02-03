@@ -50,10 +50,10 @@ class Linear(minitorch.Module):
         x = x.view(batch, in_size)
         w = self.weights.value.view(in_size, self.out_size)
         b = self.bias.value.view(1, self.out_size)
-        
+
         return x @ w + b
         # END ASSIGN1_3
-        
+
         
 class Network(minitorch.Module):
     """
@@ -70,7 +70,7 @@ class Network(minitorch.Module):
     def __init__(
         self,
         embedding_dim=50,
-        hidden_dim=32,
+        hidden_dim=128,
         dropout_prob=0.5,
     ):
         super().__init__()
@@ -81,7 +81,8 @@ class Network(minitorch.Module):
         # BEGIN ASSIGN1_3
         # 1. Construct two linear layers: the first one is embedding_dim * hidden_dim, the second one is hidden_dim * 1
         self.linear1 = Linear(embedding_dim, hidden_dim)
-        self.linear2 = Linear(hidden_dim, 1)
+        self.linear2 = Linear(hidden_dim, hidden_dim)
+        self.out = Linear(hidden_dim, 1)
         # END ASSIGN1_3
         
 
@@ -104,11 +105,31 @@ class Network(minitorch.Module):
         x = embeddings.mean(1).view(batch, self.embedding_dim) # (batch, embedding_dim)
         x = self.linear1(x) # (batch, hidden_dim)
         x = minitorch.dropout(x.relu(), self.dropout_prob) # (batch, hidden_dim)
-        x = self.linear2(x) # (batch, 1)
+        x = self.linear2(x) # (batch, hidden_dim)
+        x = minitorch.dropout(x.relu(), self.dropout_prob) # (batch, hidden_dim)
+        x = self.out(x) # (batch, 1)
         x = x.sigmoid().view(batch) # (batch,)
 
         return x
         # END ASSIGN1_3
+
+
+class BinaryCrossEntropyLoss(minitorch.Module):
+
+    def forward(self, x: Tensor, y: Tensor):
+        """
+        x: output of the model of size (batch, 1)
+        target: true labels of size (batch,)
+        """
+        
+        batch = x.shape[0]
+        assert x.shape == y.shape, f"Shape mismatch: x: {x.shape} vs y: {y.shape}"
+
+        ones = minitorch.tensor([1.0] * batch, backend=BACKEND)
+        loss = - y * x.log() + (y - ones) * (ones - x).log() # (batch,)
+        loss = loss.mean()
+        
+        return loss
 
 
 # Evaluation helper methods
@@ -172,12 +193,18 @@ class SentenceSentimentTrain:
         log_fn=default_log_fn,
     ):
         model = self.model
+
         (X_train, y_train) = data_train
         n_training_samples = len(X_train)
-        optim = minitorch.Adam(self.model.parameters(), learning_rate)
+        
         losses = []
         train_accuracy = []
         validation_accuracy = []
+
+        criterion = BinaryCrossEntropyLoss()
+        optim_adam = minitorch.Adam(self.model.parameters(), learning_rate)
+        optim_sgd = minitorch.SGD(self.model.parameters(), 0.1)
+
         for epoch in range(1, max_epochs + 1):
             total_loss = 0.0
             n_batches = 0
@@ -186,23 +213,32 @@ class SentenceSentimentTrain:
             train_predictions = []
             batch_size = min(batch_size, n_training_samples)
             
+            print(f"Epoch {epoch}")
             for batch_num, example_num in enumerate(
                 range(0, n_training_samples, batch_size)
-            ):
-                out=None
-                
+            ):  
                 # BEGIN ASSIGN1_4
-                # TODO
                 # 1. Create x and y using minitorch.tensor function through our CudaKernelOps backend
                 # 2. Set requires_grad=True for x and y
                 # 3. Get the model output (as out)
                 # 4. Calculate the loss using Binary Crossentropy Loss
                 # 5. Call backward function of the loss
                 # 6. Use Optimizer to take a gradient step
+                X_batch = X_train[example_num : example_num + batch_size]
+                y_batch = y_train[example_num : example_num + batch_size]
+
+                x = minitorch.tensor(X_batch, requires_grad=True, backend=BACKEND)
+                y = minitorch.tensor(y_batch, requires_grad=True, backend=BACKEND)
                 
-                raise NotImplementedError
+                out: Tensor = model(x) # (batch,)
+                loss = criterion(out, y)
+
+                optim = optim_adam if epoch < 20 else optim_sgd
+
+                optim.zero_grad()
+                loss.backward()
+                optim.step()
                 # END ASSIGN1_4
-                
                 
                 # Save training results
                 train_predictions += get_predictions_array(y, out)
@@ -216,14 +252,16 @@ class SentenceSentimentTrain:
                 model.eval()
                 
                 # BEGIN ASSIGN1_4
-                # TODO
                 # 1. Create x and y using minitorch.tensor function through our CudaKernelOps backend
                 # 2. Get the output of the model
                 # 3. Obtain validation predictions using the get_predictions_array function, and add to the validation_predictions list
                 # 4. Obtain the validation accuracy using the get_accuracy function, and add to the validation_accuracy list
-                
-                raise NotImplementedError
-                
+                x = minitorch.tensor(X_val, requires_grad=True, backend=BACKEND)
+                y = minitorch.tensor(y_val, requires_grad=True, backend=BACKEND)
+
+                out: Tensor = model(x) # (batch,)
+                validation_predictions = get_predictions_array(y, out)
+                validation_accuracy.append(get_accuracy(validation_predictions))
                 # END ASSIGN1_4
                 
                 model.train()
@@ -263,7 +301,6 @@ def encode_sentences(
 
 
 def encode_sentiment_data(dataset, pretrained_embeddings, N_train, N_val=0):
-
     #  Determine max sentence length for padding
     max_sentence_len = 0
     for sentence in dataset["train"]["sentence"] + dataset["validation"]["sentence"]:
@@ -273,6 +310,7 @@ def encode_sentiment_data(dataset, pretrained_embeddings, N_train, N_val=0):
     unk_embedding = [
         0.1 * (random.random() - 0.5) for i in range(pretrained_embeddings.d_emb)
     ]
+
     X_train, y_train = encode_sentences(
         dataset["train"],
         N_train,
@@ -298,7 +336,7 @@ if __name__ == "__main__":
     train_size = 450
     validation_size = 100
     learning_rate = 0.25
-    max_epochs = 250
+    max_epochs = 50
     embedding_dim = 50
 
     (X_train, y_train), (X_val, y_val) = encode_sentiment_data(
